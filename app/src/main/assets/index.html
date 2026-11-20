@@ -148,13 +148,16 @@
       padding: 3px;
       gap: 4px;
     }
+    .segmented.cols-3 {
+      grid-template-columns: 1fr 1fr 1fr;
+    }
     .seg-btn {
-      padding: 10px 8px;
+      padding: 10px 6px;
       border: none;
       border-radius: 8px;
       background: transparent;
       color: var(--muted);
-      font-size: 0.9rem;
+      font-size: 0.88rem;
       font-weight: 700;
       cursor: pointer;
       transition: background 0.15s ease, color 0.15s ease;
@@ -162,6 +165,20 @@
     .seg-btn.active {
       background: var(--blue);
       color: #ffffff;
+    }
+    .voice-select {
+      width: 100%;
+      padding: 12px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--dark-box);
+      color: var(--text);
+      font-size: 0.95rem;
+      font-weight: 600;
+      outline: none;
+    }
+    .voice-select:focus {
+      border-color: var(--blue);
     }
     .toggle-row {
       display: flex;
@@ -208,7 +225,7 @@
   <div class="container">
     <div class="header">
       <h1 id="appTitle">Voice Timer</h1>
-      <span class="status-pill" id="ttsPill">Učitavam glas...</span>
+      <span class="status-pill" id="ttsPill">Učitavam glasove...</span>
     </div>
 
     <div class="timer-card">
@@ -239,6 +256,22 @@
           <button class="seg-btn active" id="optLangHr" type="button">Hrvatski</button>
           <button class="seg-btn" id="optLangEn" type="button">English</button>
         </div>
+      </div>
+
+      <div class="setting-group">
+        <div class="setting-label" id="lblGender">Spol glasa</div>
+        <div class="segmented cols-3">
+          <button class="seg-btn active" id="optGenAll" type="button">Svi</button>
+          <button class="seg-btn" id="optGenFemale" type="button">Ženski</button>
+          <button class="seg-btn" id="optGenMale" type="button">Muški</button>
+        </div>
+      </div>
+
+      <div class="setting-group">
+        <div class="setting-label" id="lblVoice">Odabir glasa</div>
+        <select class="voice-select" id="voiceSelect">
+          <option value="">Učitavam dostupne glasove...</option>
+        </select>
       </div>
 
       <label class="toggle-row">
@@ -274,6 +307,11 @@
         min60: "Puna minuta (1 min)",
         min30: "Pola minute (30 s)",
         langLabel: "Jezik izgovora",
+        genderLabel: "Spol glasa",
+        genAll: "Svi",
+        genFemale: "Ženski",
+        genMale: "Muški",
+        voiceLabel: "Odabir glasa",
         wakeLabel: "Zadrži zaslon uključenim",
         testBtn: "Testiraj glasovni izgovor",
         nextPrefix: "Iduća najava: ",
@@ -295,6 +333,11 @@
         min60: "Full minute (1 min)",
         min30: "Half minute (30 s)",
         langLabel: "Speech language",
+        genderLabel: "Voice gender",
+        genAll: "All",
+        genFemale: "Female",
+        genMale: "Male",
+        voiceLabel: "Select voice",
         wakeLabel: "Keep screen on",
         testBtn: "Test voice announcement",
         nextPrefix: "Next announcement: ",
@@ -326,6 +369,12 @@
     const lblLanguage = document.getElementById("lblLanguage");
     const optLangHr = document.getElementById("optLangHr");
     const optLangEn = document.getElementById("optLangEn");
+    const lblGender = document.getElementById("lblGender");
+    const optGenAll = document.getElementById("optGenAll");
+    const optGenFemale = document.getElementById("optGenFemale");
+    const optGenMale = document.getElementById("optGenMale");
+    const lblVoice = document.getElementById("lblVoice");
+    const voiceSelect = document.getElementById("voiceSelect");
     const lblWake = document.getElementById("lblWake");
     const thLap = document.getElementById("thLap");
     const thSplit = document.getElementById("thSplit");
@@ -337,6 +386,8 @@
     let lapCount = 0;
     let intervalSec = Number(localStorage.getItem("stoperica_interval")) === 30 ? 30 : 60;
     let lang = localStorage.getItem("stoperica_lang") === "en" ? "en" : "hr";
+    let genderFilter = localStorage.getItem("stoperica_gender") || "all";
+    let allVoices = [];
     let hasSpokenYet = false;
 
     function pad2(n) {
@@ -368,6 +419,49 @@
       return pad2(mins) + ":" + pad2(secs);
     }
 
+    function getSavedVoiceKey() {
+      return "stoperica_voice_" + lang;
+    }
+
+    function renderVoiceOptions() {
+      const filtered =
+        genderFilter === "all"
+          ? allVoices
+          : allVoices.filter((v) => v.gender === genderFilter);
+
+      const listToUse = filtered.length > 0 ? filtered : allVoices;
+      voiceSelect.innerHTML = "";
+
+      if (listToUse.length === 0) {
+        const opt = document.createElement("option");
+        opt.value = "";
+        opt.textContent = lang === "en" ? "Default system voice" : "Zadani sistemski glas";
+        voiceSelect.appendChild(opt);
+        return;
+      }
+
+      const savedId = localStorage.getItem(getSavedVoiceKey()) || "";
+      let matchedId = "";
+
+      for (const v of listToUse) {
+        const opt = document.createElement("option");
+        opt.value = v.id;
+        opt.textContent = v.name;
+        voiceSelect.appendChild(opt);
+        if (v.id === savedId) {
+          matchedId = v.id;
+        }
+      }
+
+      const chosenId = matchedId || listToUse[0].id;
+      voiceSelect.value = chosenId;
+      localStorage.setItem(getSavedVoiceKey(), chosenId);
+
+      if (window.AndroidBridge && typeof window.AndroidBridge.setVoiceProfile === "function") {
+        window.AndroidBridge.setVoiceProfile(chosenId);
+      }
+    }
+
     function applyTranslations() {
       const t = I18N[lang];
       appTitle.textContent = t.title;
@@ -375,6 +469,11 @@
       optMin60.textContent = t.min60;
       optMin30.textContent = t.min30;
       lblLanguage.textContent = t.langLabel;
+      lblGender.textContent = t.genderLabel;
+      optGenAll.textContent = t.genAll;
+      optGenFemale.textContent = t.genFemale;
+      optGenMale.textContent = t.genMale;
+      lblVoice.textContent = t.voiceLabel;
       lblWake.textContent = t.wakeLabel;
       btnTest.textContent = t.testBtn;
       btnLap.textContent = t.lap;
@@ -387,6 +486,9 @@
       optMin30.classList.toggle("active", intervalSec === 30);
       optLangHr.classList.toggle("active", lang === "hr");
       optLangEn.classList.toggle("active", lang === "en");
+      optGenAll.classList.toggle("active", genderFilter === "all");
+      optGenFemale.classList.toggle("active", genderFilter === "female");
+      optGenMale.classList.toggle("active", genderFilter === "male");
 
       if (!hasSpokenYet) {
         lastSpoken.textContent = intervalSec === 30 ? t.idle30 : t.idle60;
@@ -436,6 +538,11 @@
       ttsPill.className = ok ? "status-pill" : "status-pill err";
     };
 
+    window.onVoicesLoaded = function (voicesList) {
+      allVoices = Array.isArray(voicesList) ? voicesList : [];
+      renderVoiceOptions();
+    };
+
     window.onSettingsSync = function (nativeInterval, nativeLang) {
       intervalSec = nativeInterval === 30 ? 30 : 60;
       lang = nativeLang === "en" ? "en" : "hr";
@@ -461,10 +568,28 @@
       applyTranslations();
     }
 
+    function selectGender(gen) {
+      genderFilter = gen;
+      localStorage.setItem("stoperica_gender", gen);
+      applyTranslations();
+      renderVoiceOptions();
+    }
+
     optMin60.addEventListener("click", () => selectInterval(60));
     optMin30.addEventListener("click", () => selectInterval(30));
     optLangHr.addEventListener("click", () => selectLanguage("hr"));
     optLangEn.addEventListener("click", () => selectLanguage("en"));
+    optGenAll.addEventListener("click", () => selectGender("all"));
+    optGenFemale.addEventListener("click", () => selectGender("female"));
+    optGenMale.addEventListener("click", () => selectGender("male"));
+
+    voiceSelect.addEventListener("change", () => {
+      const chosen = voiceSelect.value;
+      localStorage.setItem(getSavedVoiceKey(), chosen);
+      if (window.AndroidBridge && typeof window.AndroidBridge.setVoiceProfile === "function") {
+        window.AndroidBridge.setVoiceProfile(chosen);
+      }
+    });
 
     btnMain.addEventListener("click", () => {
       if (!window.AndroidBridge) return;
