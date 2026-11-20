@@ -10,9 +10,11 @@ import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
 import android.speech.tts.TextToSpeech
+import android.speech.tts.Voice
 import android.view.WindowManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
+import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
 
@@ -22,7 +24,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private var tts: TextToSpeech? = null
     private var ttsReady = false
     private var ttsInitialized = false
-    private var ttsLanguageLabel = "Učitavam glas..."
+    private var ttsLanguageLabel = "Učitavam glasove..."
 
     private val handler = Handler(Looper.getMainLooper())
     private var isRunning = false
@@ -31,6 +33,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private var lastAnnouncedStep = 0L
     private var intervalSec = 60
     private var currentLang = "hr"
+    private var selectedVoiceId = ""
     private var keepScreenOn = true
 
     private var wakeLock: PowerManager.WakeLock? = null
@@ -84,7 +87,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                     .build()
             )
-            applyTtsLanguage()
+            refreshLanguageAndVoices()
         } else {
             ttsInitialized = false
             ttsReady = false
@@ -97,7 +100,147 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
     }
 
-    private fun applyTtsLanguage() {
+    private fun getInstalledVoicesSafe(): List<Voice> {
+        val engine = tts ?: return emptyList()
+        return try {
+            engine.voices?.toList() ?: emptyList()
+        } catch (_: Throwable) {
+            emptyList()
+        }
+    }
+
+    private fun getMatchingSystemVoices(langCode: String): List<Voice> {
+        val allowedPrefixes = if (langCode == "en") {
+            setOf("en")
+        } else {
+            setOf("hr", "bs", "sr")
+        }
+
+        return getInstalledVoicesSafe()
+            .filter { v ->
+                val lang = v.locale?.language?.lowercase(Locale.ROOT) ?: ""
+                lang in allowedPrefixes && !v.features.contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED)
+            }
+            .sortedWith(
+                compareBy<Voice>(
+                    { it.isNetworkConnectionRequired },
+                    { it.locale?.country ?: "" },
+                    { it.name }
+                )
+            )
+    }
+
+    private fun detectVoiceGender(voiceName: String, fallbackIndex: Int): String {
+        val n = voiceName.lowercase(Locale.ROOT)
+        val femaleTokens = listOf(
+            "hrk", "sfg", "tpf", "iob", "iol", "gba", "gbc", "fis",
+            "afh", "ana", "ena", "enc", "female", "woman", "zensk", "žensk"
+        )
+        val maleTokens = listOf(
+            "iom", "tpd", "gbb", "gbd", "rjs", "afb", "afc", "enb",
+            "end", "male", "man", "musk", "mušk"
+        )
+
+        if (femaleTokens.any { n.contains(it) }) return "female"
+        if (maleTokens.any { n.contains(it) }) return "male"
+        return if (fallbackIndex % 2 == 0) "female" else "male"
+    }
+
+    private fun buildVoiceCatalogJson(langCode: String): JSONArray {
+        val arr = JSONArray()
+        val sysVoices = getMatchingSystemVoices(langCode)
+
+        var femaleIdx = 0
+        var maleIdx = 0
+
+        sysVoices.forEachIndexed { index, voice ->
+            val gender = detectVoiceGender(voice.name, index)
+            val region = voice.locale?.country?.uppercase(Locale.ROOT).orEmpty().ifEmpty {
+                voice.locale?.language?.uppercase(Locale.ROOT).orEmpty()
+            }
+            val modeTag = if (voice.isNetworkConnectionRequired) "HD Online" else "Offline"
+
+            val label = if (gender == "female") {
+                femaleIdx++
+                if (langCode == "en") {
+                    "Female $femaleIdx ($region • $modeTag)"
+                } else {
+                    "Ženski $femaleIdx ($region • $modeTag)"
+                }
+            } else {
+                maleIdx++
+                if (langCode == "en") {
+                    "Male $maleIdx ($region • $modeTag)"
+                } else {
+                    "Muški $maleIdx ($region • $modeTag)"
+                }
+            }
+
+            arr.put(
+                JSONObject().apply {
+                    put("id", "sys:${voice.name}")
+                    put("name", label)
+                    put("gender", gender)
+                }
+            )
+        }
+
+        val extraFemalePresets = if (langCode == "en") {
+            listOf(
+                "preset:female_1" to "Female – Standard",
+                "preset:female_2" to "Female – Clear High",
+                "preset:female_3" to "Female – Warm Low"
+            )
+        } else {
+            listOf(
+                "preset:female_1" to "Ženski – Standardni",
+                "preset:female_2" to "Ženski – Svjetliji",
+                "preset:female_3" to "Ženski – Topli"
+            )
+        }
+
+        for ((presetId, presetLabel) in extraFemalePresets) {
+            if (femaleIdx >= 3) break
+            femaleIdx++
+            arr.put(
+                JSONObject().apply {
+                    put("id", presetId)
+                    put("name", presetLabel)
+                    put("gender", "female")
+                }
+            )
+        }
+
+        val extraMalePresets = if (langCode == "en") {
+            listOf(
+                "preset:male_1" to "Male – Deep",
+                "preset:male_2" to "Male – Medium",
+                "preset:male_3" to "Male – Baritone"
+            )
+        } else {
+            listOf(
+                "preset:male_1" to "Muški – Duboki",
+                "preset:male_2" to "Muški – Srednji",
+                "preset:male_3" to "Muški – Bariton"
+            )
+        }
+
+        for ((presetId, presetLabel) in extraMalePresets) {
+            if (maleIdx >= 3) break
+            maleIdx++
+            arr.put(
+                JSONObject().apply {
+                    put("id", presetId)
+                    put("name", presetLabel)
+                    put("gender", "male")
+                }
+            )
+        }
+
+        return arr
+    }
+
+    private fun refreshLanguageAndVoices() {
         val engine = tts ?: return
         if (!ttsInitialized) return
 
@@ -132,6 +275,9 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 "Glas spreman ($selectedLabel)"
             }
             callJs("window.onTtsStatus(true, ${JSONObject.quote(ttsLanguageLabel)})")
+            val catalog = buildVoiceCatalogJson(currentLang)
+            callJs("window.onVoicesLoaded(${catalog})")
+            applySelectedVoiceProfile()
         } else {
             ttsReady = false
             ttsLanguageLabel = if (currentLang == "en") {
@@ -140,6 +286,79 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 "Glasovni paket nije instaliran"
             }
             callJs("window.onTtsStatus(false, ${JSONObject.quote(ttsLanguageLabel)})")
+        }
+    }
+
+    private fun applySelectedVoiceProfile() {
+        val engine = tts ?: return
+        if (!ttsInitialized || !ttsReady) return
+
+        val sysVoices = getMatchingSystemVoices(currentLang)
+
+        if (selectedVoiceId.startsWith("sys:")) {
+            val targetName = selectedVoiceId.removePrefix("sys:")
+            val match = sysVoices.firstOrNull { it.name == targetName }
+            if (match != null) {
+                engine.voice = match
+                engine.setPitch(1.0f)
+                engine.setSpeechRate(1.0f)
+                return
+            }
+        }
+
+        when (selectedVoiceId) {
+            "preset:female_1" -> {
+                val base = sysVoices.firstOrNull { detectVoiceGender(it.name, 0) == "female" }
+                if (base != null) engine.voice = base
+                engine.setPitch(1.00f)
+                engine.setSpeechRate(1.00f)
+            }
+            "preset:female_2" -> {
+                val base = sysVoices.firstOrNull { detectVoiceGender(it.name, 0) == "female" }
+                if (base != null) engine.voice = base
+                engine.setPitch(1.15f)
+                engine.setSpeechRate(1.03f)
+            }
+            "preset:female_3" -> {
+                val base = sysVoices.firstOrNull { detectVoiceGender(it.name, 0) == "female" }
+                if (base != null) engine.voice = base
+                engine.setPitch(0.93f)
+                engine.setSpeechRate(0.96f)
+            }
+            "preset:male_1" -> {
+                val base = sysVoices.firstOrNull { detectVoiceGender(it.name, 1) == "male" }
+                if (base != null) {
+                    engine.voice = base
+                    engine.setPitch(0.96f)
+                } else {
+                    engine.setPitch(0.70f)
+                }
+                engine.setSpeechRate(0.98f)
+            }
+            "preset:male_2" -> {
+                val base = sysVoices.firstOrNull { detectVoiceGender(it.name, 1) == "male" }
+                if (base != null) {
+                    engine.voice = base
+                    engine.setPitch(1.04f)
+                } else {
+                    engine.setPitch(0.81f)
+                }
+                engine.setSpeechRate(1.02f)
+            }
+            "preset:male_3" -> {
+                val base = sysVoices.firstOrNull { detectVoiceGender(it.name, 1) == "male" }
+                if (base != null) {
+                    engine.voice = base
+                    engine.setPitch(0.88f)
+                } else {
+                    engine.setPitch(0.62f)
+                }
+                engine.setSpeechRate(0.94f)
+            }
+            else -> {
+                engine.setPitch(1.0f)
+                engine.setSpeechRate(1.0f)
+            }
         }
     }
 
@@ -205,6 +424,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     private fun speakPhrase(text: String) {
         if (!ttsReady) return
+        applySelectedVoiceProfile()
         tts?.speak(
             text,
             TextToSpeech.QUEUE_FLUSH,
@@ -301,7 +521,15 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         fun setLanguage(langCode: String) {
             handler.post {
                 currentLang = if (langCode == "en") "en" else "hr"
-                applyTtsLanguage()
+                refreshLanguageAndVoices()
+            }
+        }
+
+        @JavascriptInterface
+        fun setVoiceProfile(voiceId: String) {
+            handler.post {
+                selectedVoiceId = voiceId
+                applySelectedVoiceProfile()
             }
         }
 
@@ -344,6 +572,10 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 callJs("window.onSettingsSync($intervalSec, ${JSONObject.quote(currentLang)})")
                 callJs("window.onTimerTick($elapsed, $isRunning)")
                 callJs("window.onTtsStatus($ttsReady, ${JSONObject.quote(ttsLanguageLabel)})")
+                if (ttsInitialized && ttsReady) {
+                    val catalog = buildVoiceCatalogJson(currentLang)
+                    callJs("window.onVoicesLoaded(${catalog})")
+                }
             }
         }
     }
