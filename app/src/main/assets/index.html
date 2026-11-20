@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Govorna Štoperica</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --border: #334155;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --green: #16a34a;
+      --amber: #d97706;
+      --red: #dc2626;
+      --blue: #2563eb;
+      --dark-box: #0b1120;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body {
+      margin: 0;
+      padding: 16px;
+      font-family: system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    .container {
+      max-width: 520px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .header h1 {
+      margin: 0;
+      font-size: 1.25rem;
+      font-weight: 800;
+    }
+    .status-pill {
+      font-size: 0.78rem;
+      font-weight: 700;
+      padding: 5px 10px;
+      border-radius: 999px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      color: #86efac;
+    }
+    .status-pill.err {
+      color: #fca5a5;
+    }
+    .timer-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 24px 16px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+    .timer-display {
+      font-size: 3.4rem;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0.02em;
+      color: #ffffff;
+      line-height: 1.1;
+    }
+    .timer-display.small-hours {
+      font-size: 2.7rem;
+    }
+    .next-badge {
+      background: var(--dark-box);
+      border: 1px solid var(--border);
+      color: #93c5fd;
+      font-size: 0.88rem;
+      font-weight: 700;
+      padding: 6px 14px;
+      border-radius: 999px;
+    }
+    .last-spoken {
+      font-size: 0.85rem;
+      color: var(--muted);
+      min-height: 1.2em;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      padding: 16px;
+      border: none;
+      border-radius: 12px;
+      font-size: 1.08rem;
+      font-weight: 800;
+      color: #fff;
+      cursor: pointer;
+      transition: transform 0.08s ease, opacity 0.15s ease;
+    }
+    .btn:active { transform: scale(0.98); }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .btn-start { background: var(--green); font-size: 1.2rem; padding: 18px; }
+    .btn-pause { background: var(--amber); font-size: 1.2rem; padding: 18px; }
+    .btn-lap { background: var(--blue); }
+    .btn-reset { background: var(--red); }
+    .btn-test { background: #334155; border: 1px solid #475569; font-size: 0.94rem; padding: 12px; }
+    .row-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .toggle-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.92rem;
+      color: var(--text);
+    }
+    .toggle-row input {
+      width: 20px;
+      height: 20px;
+      accent-color: var(--green);
+    }
+    .laps-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: var(--muted);
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+    .laps-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-height: 220px;
+      overflow-y: auto;
+    }
+    .lap-item {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.94rem;
+      font-variant-numeric: tabular-nums;
+      padding: 6px 4px;
+      border-bottom: 1px solid rgba(51, 65, 85, 0.45);
+    }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Govorna Štoperica</h1>
+      <span class="status-pill" id="ttsPill">Učitavam glas...</span>
+    </div>
+
+    <div class="timer-card">
+      <div class="timer-display" id="timerDisplay">00:00.00</div>
+      <div class="next-badge" id="nextBadge">Iduća najava: 1. minuta</div>
+      <div class="last-spoken" id="lastSpoken">Izgovara vrijeme svake pune minute</div>
+    </div>
+
+    <button class="btn btn-start" id="btnMain" type="button">Pokreni</button>
+
+    <div class="row-2">
+      <button class="btn btn-lap" id="btnLap" type="button" disabled>Krug</button>
+      <button class="btn btn-reset" id="btnReset" type="button" disabled>Resetiraj</button>
+    </div>
+
+    <div class="card">
+      <label class="toggle-row">
+        <span>Zadrži zaslon uključenim</span>
+        <input type="checkbox" id="chkWake" checked />
+      </label>
+      <button class="btn btn-test" id="btnTest" type="button">
+        Testiraj glasovni izgovor
+      </button>
+    </div>
+
+    <div class="card hidden" id="lapsCard">
+      <div class="laps-header">
+        <span>Krug</span>
+        <span>Vrijeme kruga</span>
+        <span>Ukupno</span>
+      </div>
+      <div class="laps-list" id="lapsList"></div>
+    </div>
+  </div>
+
+  <script>
+    const timerDisplay = document.getElementById("timerDisplay");
+    const nextBadge = document.getElementById("nextBadge");
+    const lastSpoken = document.getElementById("lastSpoken");
+    const ttsPill = document.getElementById("ttsPill");
+    const btnMain = document.getElementById("btnMain");
+    const btnLap = document.getElementById("btnLap");
+    const btnReset = document.getElementById("btnReset");
+    const btnTest = document.getElementById("btnTest");
+    const chkWake = document.getElementById("chkWake");
+    const lapsCard = document.getElementById("lapsCard");
+    const lapsList = document.getElementById("lapsList");
+
+    let running = false;
+    let currentMs = 0;
+    let lastLapMs = 0;
+    let lapCount = 0;
+
+    function pad2(n) {
+      return n < 10 ? "0" + n : String(n);
+    }
+
+    function formatTime(ms) {
+      const totalCentis = Math.floor(ms / 10);
+      const centis = totalCentis % 100;
+      const totalSec = Math.floor(ms / 1000);
+      const secs = totalSec % 60;
+      const totalMin = Math.floor(totalSec / 60);
+      const mins = totalMin % 60;
+      const hours = Math.floor(totalMin / 60);
+
+      if (hours > 0) {
+        return pad2(hours) + ":" + pad2(mins) + ":" + pad2(secs) + "." + pad2(centis);
+      }
+      return pad2(mins) + ":" + pad2(secs) + "." + pad2(centis);
+    }
+
+    window.onTimerTick = function (elapsedMs, isRun) {
+      currentMs = elapsedMs;
+      running = isRun;
+
+      const formatted = formatTime(elapsedMs);
+      timerDisplay.textContent = formatted;
+      if (elapsedMs >= 3600000) {
+        timerDisplay.classList.add("small-hours");
+      } else {
+        timerDisplay.classList.remove("small-hours");
+      }
+
+      const nextMin = Math.floor(elapsedMs / 60000) + 1;
+      nextBadge.textContent = "Iduća najava: " + nextMin + ". minuta";
+
+      if (running) {
+        btnMain.textContent = "Pauziraj";
+        btnMain.className = "btn btn-pause";
+        btnLap.disabled = false;
+        btnReset.disabled = false;
+      } else {
+        btnMain.textContent = elapsedMs > 0 ? "Nastavi" : "Pokreni";
+        btnMain.className = "btn btn-start";
+        btnLap.disabled = true;
+        btnReset.disabled = elapsedMs === 0;
+      }
+    };
+
+    window.onMinuteAnnounced = function (minute, phrase) {
+      lastSpoken.textContent = "Zadnje izgovoreno: \"" + phrase + "\"";
+    };
+
+    window.onTtsStatus = function (ok, label) {
+      ttsPill.textContent = label;
+      ttsPill.className = ok ? "status-pill" : "status-pill err";
+    };
+
+    btnMain.addEventListener("click", () => {
+      if (!window.AndroidBridge) return;
+      if (running) {
+        window.AndroidBridge.pause();
+      } else {
+        window.AndroidBridge.start();
+      }
+    });
+
+    btnLap.addEventListener("click", () => {
+      if (!running) return;
+      lapCount++;
+      const splitMs = currentMs - lastLapMs;
+      lastLapMs = currentMs;
+
+      lapsCard.classList.remove("hidden");
+      const row = document.createElement("div");
+      row.className = "lap-item";
+      row.innerHTML =
+        "<span>#" + lapCount + "</span>" +
+        "<span>+" + formatTime(splitMs) + "</span>" +
+        "<span>" + formatTime(currentMs) + "</span>";
+      lapsList.insertBefore(row, lapsList.firstChild);
+    });
+
+    btnReset.addEventListener("click", () => {
+      if (window.AndroidBridge) {
+        window.AndroidBridge.reset();
+      }
+      lastLapMs = 0;
+      lapCount = 0;
+      lapsList.innerHTML = "";
+      lapsCard.classList.add("hidden");
+      lastSpoken.textContent = "Izgovara vrijeme svake pune minute";
+    });
+
+    btnTest.addEventListener("click", () => {
+      if (window.AndroidBridge) {
+        window.AndroidBridge.testVoice();
+      }
+    });
+
+    chkWake.addEventListener("change", () => {
+      if (window.AndroidBridge) {
+        window.AndroidBridge.setKeepScreenOn(chkWake.checked);
+      }
+    });
+
+    if (window.AndroidBridge && typeof window.AndroidBridge.syncState === "function") {
+      window.AndroidBridge.syncState();
+    }
+  </script>
+</body>
+</html>
