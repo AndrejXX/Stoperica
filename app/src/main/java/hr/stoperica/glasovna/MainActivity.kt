@@ -21,13 +21,16 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private lateinit var webView: WebView
     private var tts: TextToSpeech? = null
     private var ttsReady = false
+    private var ttsInitialized = false
     private var ttsLanguageLabel = "Učitavam glas..."
 
     private val handler = Handler(Looper.getMainLooper())
     private var isRunning = false
     private var startBaseRealtime = 0L
     private var accumulatedMs = 0L
-    private var lastAnnouncedMinute = 0L
+    private var lastAnnouncedStep = 0L
+    private var intervalSec = 60
+    private var currentLang = "hr"
     private var keepScreenOn = true
 
     private var wakeLock: PowerManager.WakeLock? = null
@@ -35,13 +38,15 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private val tickRunnable = object : Runnable {
         override fun run() {
             val elapsed = getCurrentElapsedMs()
-            val currentMinute = elapsed / 60_000L
+            val stepMs = intervalSec * 1000L
+            val currentStep = elapsed / stepMs
 
-            if (currentMinute > lastAnnouncedMinute) {
-                lastAnnouncedMinute = currentMinute
-                val phrase = formatMinutePhrase(currentMinute)
+            if (currentStep > lastAnnouncedStep) {
+                lastAnnouncedStep = currentStep
+                val totalSeconds = currentStep * intervalSec
+                val phrase = formatAnnouncementPhrase(totalSeconds)
                 speakPhrase(phrase)
-                callJs("window.onMinuteAnnounced($currentMinute, ${JSONObject.quote(phrase)})")
+                callJs("window.onTimeAnnounced($totalSeconds, ${JSONObject.quote(phrase)})")
             }
 
             callJs("window.onTimerTick($elapsed, $isRunning)")
@@ -72,42 +77,68 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
-            val engine = tts ?: return
-            engine.setAudioAttributes(
+            ttsInitialized = true
+            tts?.setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_MEDIA)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                     .build()
             )
+            applyTtsLanguage()
+        } else {
+            ttsInitialized = false
+            ttsReady = false
+            ttsLanguageLabel = if (currentLang == "en") {
+                "Speech engine unavailable"
+            } else {
+                "Glasovna sinteza nije dostupna"
+            }
+            callJs("window.onTtsStatus(false, ${JSONObject.quote(ttsLanguageLabel)})")
+        }
+    }
 
-            val candidates = listOf(
+    private fun applyTtsLanguage() {
+        val engine = tts ?: return
+        if (!ttsInitialized) return
+
+        val candidates = if (currentLang == "en") {
+            listOf(
+                Locale.UK to "English (UK)",
+                Locale.US to "English (US)",
+                Locale.ENGLISH to "English"
+            )
+        } else {
+            listOf(
                 Locale("hr", "HR") to "Hrvatski",
                 Locale("bs", "BA") to "Bosanski",
-                Locale("sr", "RS") to "Srpski",
-                Locale.getDefault() to Locale.getDefault().displayLanguage
+                Locale("sr", "RS") to "Srpski"
             )
+        }
 
-            var selectedLabel = ""
-            for ((loc, label) in candidates) {
-                val res = engine.setLanguage(loc)
-                if (res != TextToSpeech.LANG_MISSING_DATA && res != TextToSpeech.LANG_NOT_SUPPORTED) {
-                    selectedLabel = label
-                    break
-                }
+        var selectedLabel = ""
+        for ((loc, label) in candidates) {
+            val res = engine.setLanguage(loc)
+            if (res != TextToSpeech.LANG_MISSING_DATA && res != TextToSpeech.LANG_NOT_SUPPORTED) {
+                selectedLabel = label
+                break
             }
+        }
 
-            if (selectedLabel.isNotEmpty()) {
-                ttsReady = true
-                ttsLanguageLabel = "Glas spreman ($selectedLabel)"
-                callJs("window.onTtsStatus(true, ${JSONObject.quote(ttsLanguageLabel)})")
+        if (selectedLabel.isNotEmpty()) {
+            ttsReady = true
+            ttsLanguageLabel = if (currentLang == "en") {
+                "Voice ready ($selectedLabel)"
             } else {
-                ttsReady = false
-                ttsLanguageLabel = "Glasovni paket nije instaliran"
-                callJs("window.onTtsStatus(false, ${JSONObject.quote(ttsLanguageLabel)})")
+                "Glas spreman ($selectedLabel)"
             }
+            callJs("window.onTtsStatus(true, ${JSONObject.quote(ttsLanguageLabel)})")
         } else {
             ttsReady = false
-            ttsLanguageLabel = "Glasovna sinteza nije dostupna"
+            ttsLanguageLabel = if (currentLang == "en") {
+                "Voice pack not installed"
+            } else {
+                "Glasovni paket nije instaliran"
+            }
             callJs("window.onTtsStatus(false, ${JSONObject.quote(ttsLanguageLabel)})")
         }
     }
@@ -120,14 +151,55 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
     }
 
-    private fun formatMinutePhrase(mins: Long): String {
+    private fun formatAnnouncementPhrase(totalSeconds: Long): String {
+        return if (currentLang == "en") {
+            formatPhraseEn(totalSeconds)
+        } else {
+            formatPhraseHr(totalSeconds)
+        }
+    }
+
+    private fun formatPhraseHr(totalSeconds: Long): String {
+        val mins = totalSeconds / 60L
+        val secs = totalSeconds % 60L
+
+        if (mins == 0L && secs == 30L) {
+            return "Prošlo je pola minute"
+        }
+
         val mod100 = (mins % 100).toInt()
         val mod10 = (mins % 10).toInt()
-        return when {
+        val minPart = when {
             mod100 in 11..14 -> "Prošlo je $mins minuta"
             mod10 == 1 -> "Prošla je $mins minuta"
             mod10 in 2..4 -> "Prošle su $mins minute"
             else -> "Prošlo je $mins minuta"
+        }
+
+        return if (secs == 30L) {
+            "$minPart i 30 sekundi"
+        } else {
+            minPart
+        }
+    }
+
+    private fun formatPhraseEn(totalSeconds: Long): String {
+        val mins = totalSeconds / 60L
+        val secs = totalSeconds % 60L
+
+        if (mins == 0L && secs == 30L) {
+            return "Half a minute has passed"
+        }
+
+        if (secs == 30L) {
+            val unit = if (mins == 1L) "minute" else "minutes"
+            return "$mins $unit and 30 seconds have passed"
+        }
+
+        return if (mins == 1L) {
+            "1 minute has passed"
+        } else {
+            "$mins minutes have passed"
         }
     }
 
@@ -209,7 +281,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 isRunning = false
                 handler.removeCallbacks(tickRunnable)
                 accumulatedMs = 0L
-                lastAnnouncedMinute = 0L
+                lastAnnouncedStep = 0L
                 releaseWakeLock()
                 tts?.stop()
                 callJs("window.onTimerTick(0, false)")
@@ -217,9 +289,39 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
 
         @JavascriptInterface
+        fun setIntervalSeconds(sec: Int) {
+            handler.post {
+                intervalSec = if (sec == 30) 30 else 60
+                lastAnnouncedStep = getCurrentElapsedMs() / (intervalSec * 1000L)
+                callJs("window.onTimerTick(${getCurrentElapsedMs()}, $isRunning)")
+            }
+        }
+
+        @JavascriptInterface
+        fun setLanguage(langCode: String) {
+            handler.post {
+                currentLang = if (langCode == "en") "en" else "hr"
+                applyTtsLanguage()
+            }
+        }
+
+        @JavascriptInterface
         fun testVoice() {
             handler.post {
-                speakPhrase("Glasovna najava radi. Prošla je 1 minuta.")
+                val sample = if (currentLang == "en") {
+                    if (intervalSec == 30) {
+                        "Voice announcement is working. Half a minute has passed."
+                    } else {
+                        "Voice announcement is working. 1 minute has passed."
+                    }
+                } else {
+                    if (intervalSec == 30) {
+                        "Glasovna najava radi. Prošlo je pola minute."
+                    } else {
+                        "Glasovna najava radi. Prošla je 1 minuta."
+                    }
+                }
+                speakPhrase(sample)
             }
         }
 
@@ -239,6 +341,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         fun syncState() {
             handler.post {
                 val elapsed = getCurrentElapsedMs()
+                callJs("window.onSettingsSync($intervalSec, ${JSONObject.quote(currentLang)})")
                 callJs("window.onTimerTick($elapsed, $isRunning)")
                 callJs("window.onTtsStatus($ttsReady, ${JSONObject.quote(ttsLanguageLabel)})")
             }
