@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Govorna Štoperica</title>
+  <title>Voice Timer</title>
   <style>
     :root {
       --bg: #0f172a;
@@ -36,6 +36,7 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
+      gap: 8px;
     }
     .header h1 {
       margin: 0;
@@ -43,13 +44,14 @@
       font-weight: 800;
     }
     .status-pill {
-      font-size: 0.78rem;
+      font-size: 0.76rem;
       font-weight: 700;
       padding: 5px 10px;
       border-radius: 999px;
       background: var(--card);
       border: 1px solid var(--border);
       color: #86efac;
+      white-space: nowrap;
     }
     .status-pill.err {
       color: #fca5a5;
@@ -58,7 +60,7 @@
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: 18px;
-      padding: 24px 16px;
+      padding: 22px 16px;
       text-align: center;
       display: flex;
       flex-direction: column;
@@ -125,12 +127,49 @@
       flex-direction: column;
       gap: 12px;
     }
+    .setting-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .setting-label {
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+    }
+    .segmented {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      background: var(--dark-box);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 3px;
+      gap: 4px;
+    }
+    .seg-btn {
+      padding: 10px 8px;
+      border: none;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 0.9rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+    .seg-btn.active {
+      background: var(--blue);
+      color: #ffffff;
+    }
     .toggle-row {
       display: flex;
       justify-content: space-between;
       align-items: center;
       font-size: 0.92rem;
       color: var(--text);
+      padding-top: 2px;
     }
     .toggle-row input {
       width: 20px;
@@ -168,13 +207,13 @@
 <body>
   <div class="container">
     <div class="header">
-      <h1>Govorna Štoperica</h1>
+      <h1 id="appTitle">Voice Timer</h1>
       <span class="status-pill" id="ttsPill">Učitavam glas...</span>
     </div>
 
     <div class="timer-card">
       <div class="timer-display" id="timerDisplay">00:00.00</div>
-      <div class="next-badge" id="nextBadge">Iduća najava: 1. minuta</div>
+      <div class="next-badge" id="nextBadge">Iduća najava: 01:00</div>
       <div class="last-spoken" id="lastSpoken">Izgovara vrijeme svake pune minute</div>
     </div>
 
@@ -186,10 +225,27 @@
     </div>
 
     <div class="card">
+      <div class="setting-group">
+        <div class="setting-label" id="lblInterval">Interval najave</div>
+        <div class="segmented">
+          <button class="seg-btn active" id="optMin60" type="button">Puna minuta (1 min)</button>
+          <button class="seg-btn" id="optMin30" type="button">Pola minute (30 s)</button>
+        </div>
+      </div>
+
+      <div class="setting-group">
+        <div class="setting-label" id="lblLanguage">Jezik izgovora</div>
+        <div class="segmented">
+          <button class="seg-btn active" id="optLangHr" type="button">Hrvatski</button>
+          <button class="seg-btn" id="optLangEn" type="button">English</button>
+        </div>
+      </div>
+
       <label class="toggle-row">
-        <span>Zadrži zaslon uključenim</span>
+        <span id="lblWake">Zadrži zaslon uključenim</span>
         <input type="checkbox" id="chkWake" checked />
       </label>
+
       <button class="btn btn-test" id="btnTest" type="button">
         Testiraj glasovni izgovor
       </button>
@@ -197,15 +253,61 @@
 
     <div class="card hidden" id="lapsCard">
       <div class="laps-header">
-        <span>Krug</span>
-        <span>Vrijeme kruga</span>
-        <span>Ukupno</span>
+        <span id="thLap">Krug</span>
+        <span id="thSplit">Vrijeme kruga</span>
+        <span id="thTotal">Ukupno</span>
       </div>
       <div class="laps-list" id="lapsList"></div>
     </div>
   </div>
 
   <script>
+    const I18N = {
+      hr: {
+        title: "Voice Timer",
+        start: "Pokreni",
+        pause: "Pauziraj",
+        resume: "Nastavi",
+        lap: "Krug",
+        reset: "Resetiraj",
+        intervalLabel: "Interval najave",
+        min60: "Puna minuta (1 min)",
+        min30: "Pola minute (30 s)",
+        langLabel: "Jezik izgovora",
+        wakeLabel: "Zadrži zaslon uključenim",
+        testBtn: "Testiraj glasovni izgovor",
+        nextPrefix: "Iduća najava: ",
+        idle60: "Izgovara vrijeme svake pune minute",
+        idle30: "Izgovara vrijeme svakih pola minute",
+        lastPrefix: "Zadnje izgovoreno: ",
+        thLap: "Krug",
+        thSplit: "Vrijeme kruga",
+        thTotal: "Ukupno"
+      },
+      en: {
+        title: "Voice Timer",
+        start: "Start",
+        pause: "Pause",
+        resume: "Resume",
+        lap: "Lap",
+        reset: "Reset",
+        intervalLabel: "Announcement interval",
+        min60: "Full minute (1 min)",
+        min30: "Half minute (30 s)",
+        langLabel: "Speech language",
+        wakeLabel: "Keep screen on",
+        testBtn: "Test voice announcement",
+        nextPrefix: "Next announcement: ",
+        idle60: "Announces elapsed time every full minute",
+        idle30: "Announces elapsed time every half minute",
+        lastPrefix: "Last spoken: ",
+        thLap: "Lap",
+        thSplit: "Lap time",
+        thTotal: "Total"
+      }
+    };
+
+    const appTitle = document.getElementById("appTitle");
     const timerDisplay = document.getElementById("timerDisplay");
     const nextBadge = document.getElementById("nextBadge");
     const lastSpoken = document.getElementById("lastSpoken");
@@ -218,10 +320,24 @@
     const lapsCard = document.getElementById("lapsCard");
     const lapsList = document.getElementById("lapsList");
 
+    const lblInterval = document.getElementById("lblInterval");
+    const optMin60 = document.getElementById("optMin60");
+    const optMin30 = document.getElementById("optMin30");
+    const lblLanguage = document.getElementById("lblLanguage");
+    const optLangHr = document.getElementById("optLangHr");
+    const optLangEn = document.getElementById("optLangEn");
+    const lblWake = document.getElementById("lblWake");
+    const thLap = document.getElementById("thLap");
+    const thSplit = document.getElementById("thSplit");
+    const thTotal = document.getElementById("thTotal");
+
     let running = false;
     let currentMs = 0;
     let lastLapMs = 0;
     let lapCount = 0;
+    let intervalSec = Number(localStorage.getItem("stoperica_interval")) === 30 ? 30 : 60;
+    let lang = localStorage.getItem("stoperica_lang") === "en" ? "en" : "hr";
+    let hasSpokenYet = false;
 
     function pad2(n) {
       return n < 10 ? "0" + n : String(n);
@@ -242,42 +358,113 @@
       return pad2(mins) + ":" + pad2(secs) + "." + pad2(centis);
     }
 
+    function formatTargetMark(totalSec) {
+      const hours = Math.floor(totalSec / 3600);
+      const mins = Math.floor((totalSec % 3600) / 60);
+      const secs = totalSec % 60;
+      if (hours > 0) {
+        return pad2(hours) + ":" + pad2(mins) + ":" + pad2(secs);
+      }
+      return pad2(mins) + ":" + pad2(secs);
+    }
+
+    function applyTranslations() {
+      const t = I18N[lang];
+      appTitle.textContent = t.title;
+      lblInterval.textContent = t.intervalLabel;
+      optMin60.textContent = t.min60;
+      optMin30.textContent = t.min30;
+      lblLanguage.textContent = t.langLabel;
+      lblWake.textContent = t.wakeLabel;
+      btnTest.textContent = t.testBtn;
+      btnLap.textContent = t.lap;
+      btnReset.textContent = t.reset;
+      thLap.textContent = t.thLap;
+      thSplit.textContent = t.thSplit;
+      thTotal.textContent = t.thTotal;
+
+      optMin60.classList.toggle("active", intervalSec === 60);
+      optMin30.classList.toggle("active", intervalSec === 30);
+      optLangHr.classList.toggle("active", lang === "hr");
+      optLangEn.classList.toggle("active", lang === "en");
+
+      if (!hasSpokenYet) {
+        lastSpoken.textContent = intervalSec === 30 ? t.idle30 : t.idle60;
+      }
+      updateDynamicLabels();
+    }
+
+    function updateDynamicLabels() {
+      const t = I18N[lang];
+      const stepMs = intervalSec * 1000;
+      const nextStep = Math.floor(currentMs / stepMs) + 1;
+      const nextTargetSec = nextStep * intervalSec;
+      nextBadge.textContent = t.nextPrefix + formatTargetMark(nextTargetSec);
+
+      if (running) {
+        btnMain.textContent = t.pause;
+        btnMain.className = "btn btn-pause";
+      } else {
+        btnMain.textContent = currentMs > 0 ? t.resume : t.start;
+        btnMain.className = "btn btn-start";
+      }
+    }
+
     window.onTimerTick = function (elapsedMs, isRun) {
       currentMs = elapsedMs;
       running = isRun;
 
-      const formatted = formatTime(elapsedMs);
-      timerDisplay.textContent = formatted;
+      timerDisplay.textContent = formatTime(elapsedMs);
       if (elapsedMs >= 3600000) {
         timerDisplay.classList.add("small-hours");
       } else {
         timerDisplay.classList.remove("small-hours");
       }
 
-      const nextMin = Math.floor(elapsedMs / 60000) + 1;
-      nextBadge.textContent = "Iduća najava: " + nextMin + ". minuta";
-
-      if (running) {
-        btnMain.textContent = "Pauziraj";
-        btnMain.className = "btn btn-pause";
-        btnLap.disabled = false;
-        btnReset.disabled = false;
-      } else {
-        btnMain.textContent = elapsedMs > 0 ? "Nastavi" : "Pokreni";
-        btnMain.className = "btn btn-start";
-        btnLap.disabled = true;
-        btnReset.disabled = elapsedMs === 0;
-      }
+      btnLap.disabled = !running;
+      btnReset.disabled = running || elapsedMs === 0;
+      updateDynamicLabels();
     };
 
-    window.onMinuteAnnounced = function (minute, phrase) {
-      lastSpoken.textContent = "Zadnje izgovoreno: \"" + phrase + "\"";
+    window.onTimeAnnounced = function (totalSeconds, phrase) {
+      hasSpokenYet = true;
+      lastSpoken.textContent = I18N[lang].lastPrefix + "\"" + phrase + "\"";
     };
 
     window.onTtsStatus = function (ok, label) {
       ttsPill.textContent = label;
       ttsPill.className = ok ? "status-pill" : "status-pill err";
     };
+
+    window.onSettingsSync = function (nativeInterval, nativeLang) {
+      intervalSec = nativeInterval === 30 ? 30 : 60;
+      lang = nativeLang === "en" ? "en" : "hr";
+      applyTranslations();
+    };
+
+    function selectInterval(sec) {
+      intervalSec = sec === 30 ? 30 : 60;
+      localStorage.setItem("stoperica_interval", String(intervalSec));
+      if (window.AndroidBridge && typeof window.AndroidBridge.setIntervalSeconds === "function") {
+        window.AndroidBridge.setIntervalSeconds(intervalSec);
+      }
+      applyTranslations();
+    }
+
+    function selectLanguage(newLang) {
+      lang = newLang === "en" ? "en" : "hr";
+      localStorage.setItem("stoperica_lang", lang);
+      hasSpokenYet = false;
+      if (window.AndroidBridge && typeof window.AndroidBridge.setLanguage === "function") {
+        window.AndroidBridge.setLanguage(lang);
+      }
+      applyTranslations();
+    }
+
+    optMin60.addEventListener("click", () => selectInterval(60));
+    optMin30.addEventListener("click", () => selectInterval(30));
+    optLangHr.addEventListener("click", () => selectLanguage("hr"));
+    optLangEn.addEventListener("click", () => selectLanguage("en"));
 
     btnMain.addEventListener("click", () => {
       if (!window.AndroidBridge) return;
@@ -310,9 +497,10 @@
       }
       lastLapMs = 0;
       lapCount = 0;
+      hasSpokenYet = false;
       lapsList.innerHTML = "";
       lapsCard.classList.add("hidden");
-      lastSpoken.textContent = "Izgovara vrijeme svake pune minute";
+      applyTranslations();
     });
 
     btnTest.addEventListener("click", () => {
@@ -327,8 +515,17 @@
       }
     });
 
-    if (window.AndroidBridge && typeof window.AndroidBridge.syncState === "function") {
-      window.AndroidBridge.syncState();
+    applyTranslations();
+    if (window.AndroidBridge) {
+      if (typeof window.AndroidBridge.setIntervalSeconds === "function") {
+        window.AndroidBridge.setIntervalSeconds(intervalSec);
+      }
+      if (typeof window.AndroidBridge.setLanguage === "function") {
+        window.AndroidBridge.setLanguage(lang);
+      }
+      if (typeof window.AndroidBridge.syncState === "function") {
+        window.AndroidBridge.syncState();
+      }
     }
   </script>
 </body>
