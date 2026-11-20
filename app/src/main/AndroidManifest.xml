@@ -11,7 +11,7 @@
 
     <application
         android:allowBackup="true"
-        android:label="Govorna Štoperica"
+        android:label="Voice Timer"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
 
         <activity
